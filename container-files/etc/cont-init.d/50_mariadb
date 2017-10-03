@@ -1,0 +1,128 @@
+#!/usr/bin/with-contenv sh
+
+# Shell Colors
+set_shell_error() {
+  echo -e "\e[1m" # Style: bold
+  echo -e "\e[5m" # Style: blink
+  echo -e "\e[31m" # Text Color: Red
+}
+
+set_shell_info() {
+  echo -e "\e[1m" # Style: bold
+  echo -e "\e[33m" # Text Color: Yellow
+}
+
+set_shell_pass() {
+  echo -e "\e[1m" # Style: bold
+  echo -e "\e[32m" # Text Color: Green
+}
+
+set_shell_warning() {
+  echo -e "\e[1m" # Style: bold
+  echo -e "\e[35m" # Text Color: Magenta
+}
+
+reset_shell() {
+  echo -e "\e[0m" # Reset all shell attributes
+}
+
+# Set Root Password
+set_root_user_password() {
+	set_shell_info
+	echo "Setting root password"
+	reset_shell
+
+	cat /templates/mysql-root_user | sed "s/###MYSQL_ROOT_PASSWORD###/${MYSQL_ROOT_PASSWORD}/g" >> /tmp/mysql-init.sql
+}
+
+# Create Database
+create_database() {
+	set_shell_info
+	echo "Creating database: \"${MYSQL_DATABASE}\""
+	reset_shell
+
+	cat /templates/mysql-create_database | sed "s/###MYSQL_DATABASE###/${MYSQL_DATABASE}/g" | sed "s/###MYSQL_USER###/${MYSQL_USER}/g" | sed "s/###MYSQL_PASSWORD###/${MYSQL_PASSWORD}/g" >> /tmp/mysql-init.sql
+}
+
+# Create User
+create_user() {
+	set_shell_info
+	echo "Creating MySQL user: \"${MYSQL_USER}\""
+	reset_shell
+
+	cat /templates/mysql-create_user | sed "s/###MYSQL_DATABASE###/${MYSQL_DATABASE}/g" | sed "s/###MYSQL_USER###/${MYSQL_USER}/g" | sed "s/###MYSQL_PASSWORD###/${MYSQL_PASSWORD}/g" >> /tmp/mysql-init.sql
+}
+
+
+# Read ENV variables
+MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:=""}
+MYSQL_DATABASE=${MYSQL_DATABASE:=""}
+MYSQL_USER=${MYSQL_USER:=""}
+MYSQL_PASSWORD=${MYSQL_PASSWORD:="secret!"}
+
+
+echo "FLUSH PRIVILEGES;" > /tmp/mysql-init.sql
+
+# Make sure /run/mysqld exists
+if [ ! -d /run/mysqld ]; then
+
+	set_shell_info
+	echo "Creating /run/mysqld because it does not exist"
+	reset_shell
+
+	mkdir -p /run/mysqld
+fi
+
+# Set the ownership regardles incase of pre existing data
+chown -R mysql:mysql /run/mysqld
+
+if [ ! -d /var/lib/mysql/mysql ]; then
+
+	set_shell_info
+	echo "No databases exist in /var/lib/mysql: Initializing Database"
+	reset_shell
+
+	mysql_install_db --user=mysql --verbose=0
+	echo "DROP DATABASE test;" >> /tmp/mysql-init.sql
+fi
+
+
+# Set the ownership regardles incase of pre existing data
+
+set_shell_info
+echo "Verifying ownership of /var/lib/mysql"
+reset_shell
+
+chown -R mysql:mysql /var/lib/mysql
+
+
+# Customize Install
+if [[ ${MYSQL_ROOT_PASSWORD} != "" ]]; then
+	set_root_user_password
+fi
+
+if [[ ${MYSQL_DATABASE} != "" ]]; then
+	RESULT_DB=$(mysql_embedded --user mysql -s -N -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='${MYSQL_DATABASE}'");
+	if [ -z "$RESULT_DB" ]; then
+		create_database
+		if [[ ${MYSQL_USER} != "" ]]; then
+			create_user
+		fi
+	fi
+fi
+
+COUNT=$(wc -l /tmp/mysql-init.sql | awk '{ print $1 }');
+if [ ${COUNT} -ge 2 ]; then
+	set_shell_info
+	echo "Running MySQL initization commands"
+	reset_shell
+
+	mysqld --user mysql --bootstrap --verbose=0 < /tmp/mysql-init.sql
+
+fi
+
+rm /tmp/mysql-init.sql
+
+set_shell_info
+echo "Completed Initializing MariaDB"
+reset_shell

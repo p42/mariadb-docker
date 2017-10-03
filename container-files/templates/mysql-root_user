@@ -1,0 +1,3 @@
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' IDENTIFIED BY '###MYSQL_ROOT_PASSWORD###' WITH GRANT OPTION;
+UPDATE mysql.user SET password=PASSWORD("") WHERE user='root' AND host='localhost';
+UPDATE mysql.user SET password=PASSWORD("") WHERE user='root' AND host='127.0.0.1';
